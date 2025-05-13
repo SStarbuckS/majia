@@ -43,24 +43,24 @@ const cookieUrl = (c) => {
 const getAllCookiesByDomain = async (domain) => {
 	const res = {};
 	const cookies = await chrome.cookies.getAll({domain: domain});
-	res.cookies = cookies;
+		res.cookies = cookies;
 	res.localStorage = await getLocalStorageByDomain(domain);
-	return res;
+		return res;
 };
 
 const removeAllCookiesByDomain = async (domain) => {
 	const cookies = await getAllCookiesByDomain(domain);
 	await Promise.all([
-		removeAllChromeCookies(cookies.cookies),
-		resetLocalStorageByDomain(domain, {}),
-	]);
+			removeAllChromeCookies(cookies.cookies),
+			resetLocalStorageByDomain(domain, {}),
+		]);
 };
 
 const resetAllCookiesByDomain = async (domain, cookies) => {
 	await removeAllCookiesByDomain(domain);
 	await Promise.all([
-		setAllChromeCookies(cookies.cookies),
-		resetLocalStorageByDomain(domain, cookies.localStorage),
+			setAllChromeCookies(cookies.cookies),
+			resetLocalStorageByDomain(domain, cookies.localStorage),
 	]);
 };
 
@@ -116,7 +116,7 @@ const api = {
 		delete data.profiles[data.currentProfileId];
 		data.currentProfileId = Object.keys(data.profiles)[0];
 		await storageSet(domain, data);
-		return resetAllCookiesByDomain(domain, data.profiles[data.currentProfileId].cookies);
+			return resetAllCookiesByDomain(domain, data.profiles[data.currentProfileId].cookies);
 	},
 
 	async newProfile(params) {
@@ -126,12 +126,12 @@ const api = {
 
 		const oldProfile = data.profiles[data.currentProfileId];
 		const cookies = await getAllCookiesByDomain(domain);
-		oldProfile.cookies = cookies;
+			oldProfile.cookies = cookies;
 
 		const newProfile = {title: '马甲'+Object.keys(data.profiles).length};
 		const newProfileId = Date.now();
-		data.profiles[newProfileId] = newProfile;
-		data.currentProfileId = newProfileId;
+			data.profiles[newProfileId] = newProfile;
+			data.currentProfileId = newProfileId;
 
 		await removeAllCookiesByDomain(domain);
 		await storageSet(domain, data);
@@ -162,8 +162,8 @@ const api = {
 		if (!oldProfile || !newProfile) return;
 
 		const cookies = await getAllCookiesByDomain(domain);
-		oldProfile.cookies = cookies;
-		data.currentProfileId = params.id;
+			oldProfile.cookies = cookies;
+			data.currentProfileId = params.id;
 		await storageSet(domain, data);
 		await resetAllCookiesByDomain(domain, newProfile.cookies);
 	},
@@ -182,6 +182,24 @@ const api = {
 		const profile = data.profiles[data.currentProfileId];
 		profile.title = params.username;
 		await storageSet(domain, data);
+	},
+
+	async deleteAllProfiles(params) {
+		const domain = hostToDomain(params.host);
+		// 删除存储的数据
+		await chrome.storage.local.remove(domain);
+		// 删除所有 cookies
+		const cookies = await chrome.cookies.getAll({ domain });
+		await Promise.all(cookies.map(cookie => 
+			chrome.cookies.remove({
+				url: cookieUrl(cookie),
+				name: cookie.name,
+				storeId: cookie.storeId
+			})
+		));
+		// 清除 localStorage
+		await resetLocalStorageByDomain(domain, {});
+		return true;
 	}
 };
 

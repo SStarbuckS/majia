@@ -1,6 +1,6 @@
 {
   "name" : "马甲",
-  "version" : "1.0.1",
+  "version" : "1.0.2",
   "description" : "快速切换同一网站的多个已登录账号，支持豆瓣、知乎、微博、Twitter、Facebook 等等",
   "permissions": [
     "cookies",

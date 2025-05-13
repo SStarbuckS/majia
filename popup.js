@@ -1,124 +1,101 @@
-
-var reloadCurrentTab = function () {
-	chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+const reloadCurrentTab = () => {
+	chrome.tabs.query({active: true, currentWindow: true}, tabs => {
 		chrome.tabs.reload(tabs[0].id);
 	});
 };
 
-var reloadPopup = function () {
+const reloadPopup = () => {
 	window.location.reload();
 };
 
-var callApi = function (op, params) {
-	return new Promise(function (fulfill, reject) {
-		params = params || {};
-
-		chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-			var urlParseRE = /^(((([^:\/#\?]+:)?(?:(\/\/)((?:(([^:@\/#\?]+)(?:\:([^:@\/#\?]+))?)@)?(([^:\/#\?\]\[]+|\[[^\/\]@#?]+\])(?:\:([0-9]+))?))?)?)?((\/?(?:[^\/\?#]+\/+)*)([^\?#]*)))?(\?[^#]+)?)(#.*)?/;
-			var matches = urlParseRE.exec(tabs[0].url);
+const callApi = (op, params = {}) => {
+	return new Promise((fulfill, reject) => {
+		chrome.tabs.query({active: true, currentWindow: true}, tabs => {
+			const urlParseRE = /^(((([^:\/#\?]+:)?(?:(\/\/)((?:(([^:@\/#\?]+)(?:\:([^:@\/#\?]+))?)@)?(([^:\/#\?\]\[]+|\[[^\/\]@#?]+\])(?:\:([0-9]+))?))?)?)?((\/?(?:[^\/\?#]+\/+)*)([^\?#]*)))?(\?[^#]+)?)(#.*)?/;
+			const matches = urlParseRE.exec(tabs[0].url);
 			params.host = matches[11];
 
-			chrome.runtime.sendMessage(null, {op: op, params: params}, {}, fulfill);
+			chrome.runtime.sendMessage({op, params}, fulfill);
 		});
 	});
 };
 
-var selectProfile = function (id) {
-	callApi('selectProfile', {id: id}).then(function () {
+const selectProfile = async (id) => {
+	await callApi('selectProfile', {id});
+	reloadCurrentTab();
+	reloadPopup();
+};
+
+const newProfile = async () => {
+	await callApi('newProfile');
+	reloadCurrentTab();
+	reloadPopup();
+};
+
+const deleteCurrentProfile = async () => {
+	await callApi('deleteCurrentProfile');
+	reloadCurrentTab();
+	reloadPopup();
+};
+
+const deleteAllProfiles = async () => {
+	if (confirm('确定要删除当前网站的所有账号数据吗？此操作不可恢复！')) {
+		await callApi('deleteAllProfiles');
 		reloadCurrentTab();
 		reloadPopup();
-	});
+	}
 };
 
-var newProfile = function () {
-	callApi('newProfile').then(function () {
-		reloadCurrentTab();
-		reloadPopup();
-	});
+const updateProfile = async (id, set) => {
+	await callApi('updateProfile', {id, $set: set});
+	reloadPopup();
 };
 
-var deleteCurrentProfile = function () {
-	callApi('deleteCurrentProfile').then(function () {
-		reloadCurrentTab();
-		reloadPopup();
-	});
-};
+document.addEventListener('DOMContentLoaded', async () => {
+	const data = await callApi('getProfiles');
+	const profiles = Object.entries(data.profiles).map(([id, profile]) => ({
+		...profile,
+		id
+	})).sort((a, b) => a.id - b.id);
 
-var updateProfile = function (id, set) {
-	callApi('updateProfile', {id: id, $set: set}).then(function () {
-		reloadPopup();
-	});
-};
-
-document.addEventListener('DOMContentLoaded', function () {
-	callApi('getProfiles').then(function (data) {
-		var profiles = [];
-		for (var id in data.profiles) {
-			var profile = data.profiles[id];
-			profile.id = id;
-			profiles.push(profile);
+	const profilesDiv = document.querySelector('.profiles');
+	profiles.forEach(profile => {
+		const div = document.createElement('div');
+		div.className = `profile-item ${profile.id == data.currentProfileId ? 'active' : ''}`;
+		div.textContent = profile.title;
+		
+		if (profile.id != data.currentProfileId) {
+			div.onclick = () => selectProfile(profile.id);
 		}
-		profiles.sort(function (a, b) {
-			return a.id - b.id;
-		})
+		
+		profilesDiv.appendChild(div);
+	});
 
-		var mainDiv = document.createElement('div');
+	document.getElementById('new').onclick = newProfile;
+	document.getElementById('delete').onclick = deleteCurrentProfile;
+	document.getElementById('deleteAll').onclick = deleteAllProfiles;
 
-		profiles.forEach(function (profile) {
-			var title = profile.title;
-			if (profile.id == data.currentProfileId)
-				title = '['+title+']';
-
-			var button = document.createElement('button');
-			button.innerHTML = title;
-
-			if (profile.id != data.currentProfileId) {
-				button.onclick = function () {
-					selectProfile(profile.id);
-				};
-			} else {
-				button.style.color = 'red';
-			}
-
-			mainDiv.appendChild(button);
-		});
-
-		var hr = document.createElement('p');
-		mainDiv.appendChild(hr);
-	
-		var button = document.createElement('button');
-		button.innerHTML = '新建..';
-		button.onclick = newProfile;
-		mainDiv.appendChild(button);
-
-		if (profiles.length > 1) {
-			var button = document.createElement('button');
-			button.innerHTML = '删除';
-			button.onclick = deleteCurrentProfile;
-			mainDiv.appendChild(button);
-
-			var button = document.createElement('button');
-			var input = document.createElement('input');
-			input.value = data.profiles[data.currentProfileId].title;
-
-			button.innerHTML = '重命名';
-			button.onclick = function () {
-				button.parentNode.replaceChild(input, button);
-				input.focus();
-				input.onkeypress = function (e) {
-					if (e.keyCode == 13) {
-						updateProfile(data.currentProfileId, {
-							title: input.value,
-						});
-						return false;
-					}
-					return true;
-				};
+	// 添加重命名功能
+	if (profiles.length > 1) {
+		const currentProfile = profiles.find(p => p.id == data.currentProfileId);
+		const renameButton = document.createElement('button');
+		renameButton.textContent = '重命名';
+		renameButton.onclick = () => {
+			const input = document.createElement('input');
+			input.value = currentProfile.title;
+			renameButton.parentNode.replaceChild(input, renameButton);
+			input.focus();
+			input.onkeypress = (e) => {
+				if (e.keyCode == 13) {
+					updateProfile(data.currentProfileId, {
+						title: input.value,
+					});
+					return false;
+				}
+				return true;
 			};
-			mainDiv.appendChild(button);
-		}
-
-		document.body.appendChild(mainDiv);
-	});
+		};
+		document.querySelector('.toolbox').appendChild(renameButton);
+	}
 });
 
